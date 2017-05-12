@@ -85,28 +85,29 @@ def len_var(joint_index, parent_index):
     plt.ylabel('Bone length')
     return dist_list
     
-#len_var(13,9) 
+len_var(17,15) 
             
-def cost_func(length):
+def cost_func(length, joint_index, parent_index):
     '''
     Cost function to enforce constant bone lengths.
     '''
     total_cost = 0.0
     for i in range(0,num_frames/10):
-        joint = np.array([xlist[i][13],ylist[i][13],zlist[i][13]])
-        parent = np.array([xlist[i][9],ylist[i][9],zlist[i][9]])
+        joint = np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]])
+        parent = np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
         e = joint - parent
         cost = np.linalg.norm(joint - (parent + (length * e/np.linalg.norm(e))))
         total_cost += cost
     return total_cost
     
-res = minimize(cost_func, 260.0, options={'disp':True})
-print res.x
+#res = minimize(cost_func, 250.0, args=(13,9), options={'disp':True})
+#print res.x
 
 def const_bone(joint_index, parent_index):
     '''
     Changes position of joint to ensure constant bone lengths.
     '''
+    res = minimize(cost_func, 250.0, args=(joint_index,parent_index), options={'disp':True})
     for i in range(0,len(xlist)):
         disp = np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]]) - np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
         dispN = disp/np.linalg.norm(disp)
@@ -117,6 +118,8 @@ def const_bone(joint_index, parent_index):
     return 0
     
 const_bone(13,9)
+const_bone(17,15)
+len_var(17,15)
         
 def disp_joints(i):
     '''

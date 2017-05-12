@@ -5,6 +5,7 @@ from matplotlib import animation as anim
 import mpl_toolkits.mplot3d.axes3d as p3
 from scipy.spatial import distance
 from sklearn.cluster import SpectralClustering
+from scipy.optimize import minimize
 
 reader = btk.btkAcquisitionFileReader()
 reader.SetFilename("Mocap Data/816_0190.c3d")
@@ -19,17 +20,24 @@ xlist = []
 ylist = []
 zlist = []
 
-#for j in range(0, num_frames, 10):
-#    x = []
-#    y = []
-#    z = []
-#    for i in range(0, num_markers):
-#        x.append(acq.GetPoint(i).GetValue(j,0)) 
-#        y.append(acq.GetPoint(i).GetValue(j,1))
-#        z.append(acq.GetPoint(i).GetValue(j,2))
-#    xlist.append(x)
-#    ylist.append(y)
-#    zlist.append(z)
+def RBC(affinity_matrix): #Didn't work!
+    '''
+    Carries out Rigid Body Clustering on affinity matrix to group markers. 
+    Should input empty matrix i.e. zeros(num_markers,num_markers).
+    '''
+    for i in range(0, num_markers):
+        for j in range(0, num_markers):
+            if i == j:
+                continue
+            mut_dists = []
+            for k in range(0, num_frames, 10):
+                dist = distance.euclidean(acq.GetPoint(i).GetValues()[k], acq.GetPoint(j).GetValues()[k])
+                mut_dists.append(dist)
+            rho = np.std(mut_dists)
+            sig = (1.0/num_frames) * np.sum(mut_dists)
+            affinity_matrix[i][j] = np.exp((-1.0*rho)/(2.0*sig*sig))
+    c1 = SpectralClustering(12, affinity='precomputed')
+    return c1.fit_predict(affinity_matrix)    
     
 for i in range(0, num_frames, 10):
     x = []
@@ -63,23 +71,57 @@ for i in range(0, num_frames, 10):
     ylist.append(y)
     zlist.append(z)
 
-# Clustering     
-#A = np.zeros((num_markers, num_markers))
-#for i in range(0, num_markers):
-#    for j in range(0, num_markers):
-#        if i == j:
-#            continue
-#        mut_dists = []
-#        for k in range(0, num_frames, 10):
-#            dist = distance.euclidean(acq.GetPoint(i).GetValues()[k], acq.GetPoint(j).GetValues()[k])
-#            mut_dists.append(dist)
-#        rho = np.std(mut_dists)
-#        sig = (1.0/num_frames) * np.sum(mut_dists)
-#        A[i][j] = np.exp((-1.0*rho)/(2.0*sig*sig))
-#c1 = SpectralClustering(12, affinity='precomputed')
-#print c1.fit_predict(A)
+def len_var(joint_index, parent_index):
+    '''
+    Plots length between two connected joints each frame to observe variation in length.
+    '''
+    plt.figure()
+    dist_list = []
+    for i in range(0, len(xlist)):
+        dist = distance.euclidean(np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]]),np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]]))
+        dist_list.append(dist)
+    plt.plot(list(np.arange(len(xlist))),dist_list)
+    plt.xlabel('Frame')
+    plt.ylabel('Bone length')
+    return dist_list
+    
+#len_var(13,9) 
+            
+def cost_func(length):
+    '''
+    Cost function to enforce constant bone lengths.
+    '''
+    total_cost = 0.0
+    for i in range(0,num_frames/10):
+        joint = np.array([xlist[i][13],ylist[i][13],zlist[i][13]])
+        parent = np.array([xlist[i][9],ylist[i][9],zlist[i][9]])
+        e = joint - parent
+        cost = np.linalg.norm(joint - (parent + (length * e/np.linalg.norm(e))))
+        total_cost += cost
+    return total_cost
+    
+res = minimize(cost_func, 260.0, options={'disp':True})
+print res.x
+
+def const_bone(joint_index, parent_index):
+    '''
+    Changes position of joint to ensure constant bone lengths.
+    '''
+    for i in range(0,len(xlist)):
+        disp = np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]]) - np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
+        dispN = disp/np.linalg.norm(disp)
+        new_joint = (res.x * dispN) + np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
+        xlist[i][joint_index] = new_joint[0]
+        ylist[i][joint_index] = new_joint[1]
+        zlist[i][joint_index] = new_joint[2]
+    return 0
+    
+const_bone(13,9)
         
-def disp_c3d(i): #Updates joints and segments each frame
+def disp_joints(i):
+    '''
+    Updates joints and bones each frame.
+    '''
     graph._offsets3d = (xlist[i], ylist[i], zlist[i])
     hips.set_data([xlist[i][5],xlist[i][0],xlist[i][4]], [ylist[i][5],ylist[i][0],ylist[i][4]])
     hips.set_3d_properties([zlist[i][5],zlist[i][0],zlist[i][4]])
@@ -101,7 +143,7 @@ def disp_c3d(i): #Updates joints and segments each frame
 fig = plt.figure()
 ax = p3.Axes3D(fig)
 #ax = fig.add_subplot(111, projection='3d')
-graph = ax.scatter(xlist[0], ylist[0], zlist[0], s=30, c='black')
+graph = ax.scatter(xlist[0], ylist[0], zlist[0], s=20, c='black')
 hips, = ax.plot([xlist[0][5],xlist[0][0],xlist[0][4]], [ylist[0][5],ylist[0][0],ylist[0][4]], [zlist[0][5],zlist[0][0],zlist[0][4]], 'r')
 spine, = ax.plot([xlist[0][0],xlist[0][6],xlist[0][7],xlist[0][8],xlist[0][1]], [ylist[0][0],ylist[0][6],ylist[0][7],ylist[0][8],ylist[0][1]], [zlist[0][0],zlist[0][6],zlist[0][7],zlist[0][8],zlist[0][1]], 'r')
 shoulders, = ax.plot([xlist[0][2],xlist[0][7],xlist[0][3]], [ylist[0][2],ylist[0][7],ylist[0][3]], [zlist[0][2],zlist[0][7],zlist[0][3]], 'r')
@@ -110,10 +152,12 @@ Larm, = ax.plot([xlist[0][3],xlist[0][10],xlist[0][14]], [ylist[0][3],ylist[0][1
 Rleg, = ax.plot([xlist[0][4],xlist[0][11],xlist[0][15],xlist[0][17]], [ylist[0][4],ylist[0][11],ylist[0][15],ylist[0][17]], [zlist[0][4],zlist[0][11],zlist[0][15],zlist[0][17]], 'r')
 Lleg, = ax.plot([xlist[0][5],xlist[0][12],xlist[0][16],xlist[0][18]], [ylist[0][5],ylist[0][12],ylist[0][16],ylist[0][18]], [zlist[0][5],zlist[0][12],zlist[0][16],zlist[0][18]], 'r')
 ax.set_xlabel('x')
+ax.set_xlim(-500,2000)
 ax.set_ylabel('y')
+ax.set_ylim(-500,2000)
 ax.set_zlabel('z')
 ax.axis("off")
-ani = anim.FuncAnimation(fig, disp_c3d, num_frames, interval=0, repeat=False, blit=False)
+ani = anim.FuncAnimation(fig, disp_joints, num_frames, interval=0, repeat=True, blit=False)
 
 plt.show()
 

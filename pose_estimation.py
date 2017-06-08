@@ -6,9 +6,14 @@ import mpl_toolkits.mplot3d.axes3d as p3
 from scipy.spatial import distance
 from sklearn.cluster import SpectralClustering
 from scipy.optimize import minimize
+'''
+A code that performs pose estimation on a C3D file in order to determine a 
+skeletal structure, which is then plotted and animated.
+Azeem Khan 23/05/2017
+'''
 
 reader = btk.btkAcquisitionFileReader()
-reader.SetFilename("Mocap Data/816_0190.c3d")
+reader.SetFilename("c3d samples/AlbertoREAL.c3d") #Specify file here
 reader.Update()
 acq = reader.GetOutput()
 
@@ -20,11 +25,12 @@ xlist = []
 ylist = []
 zlist = []
 
-def RBC(affinity_matrix): #Didn't work!
+def RBC(affinity_matrix):
     '''
     Carries out Rigid Body Clustering on affinity matrix to group markers. 
-    Should input empty matrix i.e. zeros(num_markers,num_markers).
+    Should input empty matrix i.e. zeros((num_markers,num_markers)).
     '''
+    red_fram = len(np.arange(0, num_frames, 10))
     for i in range(0, num_markers):
         for j in range(0, num_markers):
             if i == j:
@@ -34,11 +40,13 @@ def RBC(affinity_matrix): #Didn't work!
                 dist = distance.euclidean(acq.GetPoint(i).GetValues()[k], acq.GetPoint(j).GetValues()[k])
                 mut_dists.append(dist)
             rho = np.std(mut_dists)
-            sig = (1.0/num_frames) * np.sum(mut_dists)
+            sig = (1.0/(red_fram*red_fram)) * np.sum(mut_dists)
             affinity_matrix[i][j] = np.exp((-1.0*rho)/(2.0*sig*sig))
-    c1 = SpectralClustering(12, affinity='precomputed')
-    return c1.fit_predict(affinity_matrix)    
+    c1 = SpectralClustering(13, affinity='precomputed')
+    return c1.fit_predict(affinity_matrix) 
     
+#print RBC(np.zeros((num_markers,num_markers)))     
+         
 for i in range(0, num_frames, 10):
     x = []
     y = []
@@ -85,29 +93,35 @@ def len_var(joint_index, parent_index):
     plt.ylabel('Bone length')
     return dist_list
     
-len_var(17,15) 
+def mean_bone(joint_index, parent_index):
+    '''
+    Finds mean bone length to use as starting value in optimisation.
+    '''
+    dist_list = []
+    for i in range(0, len(xlist)):
+        dist = distance.euclidean(np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]]),np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]]))
+        dist_list.append(dist)
+    return np.mean(dist_list)
+ 
             
 def cost_func(length, joint_index, parent_index):
     '''
     Cost function to enforce constant bone lengths.
     '''
-    total_cost = 0.0
+    V = 0.0
     for i in range(0,num_frames/10):
         joint = np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]])
         parent = np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
         e = joint - parent
         cost = np.linalg.norm(joint - (parent + (length * e/np.linalg.norm(e))))
-        total_cost += cost
-    return total_cost
-    
-#res = minimize(cost_func, 250.0, args=(13,9), options={'disp':True})
-#print res.x
+        V += cost
+    return V
 
 def const_bone(joint_index, parent_index):
     '''
     Changes position of joint to ensure constant bone lengths.
     '''
-    res = minimize(cost_func, 250.0, args=(joint_index,parent_index), options={'disp':True})
+    res = minimize(cost_func, mean_bone(joint_index, parent_index), args=(joint_index,parent_index), options={'disp':True})
     for i in range(0,len(xlist)):
         disp = np.array([xlist[i][joint_index],ylist[i][joint_index],zlist[i][joint_index]]) - np.array([xlist[i][parent_index],ylist[i][parent_index],zlist[i][parent_index]])
         dispN = disp/np.linalg.norm(disp)
@@ -117,9 +131,25 @@ def const_bone(joint_index, parent_index):
         zlist[i][joint_index] = new_joint[2]
     return 0
     
+const_bone(6,0)
+const_bone(7,6)
+const_bone(2,7)
+const_bone(9,2)
 const_bone(13,9)
+const_bone(3,7)
+const_bone(10,3)
+const_bone(14,10)
+const_bone(8,7)
+const_bone(1,8)
+const_bone(4,0)
+const_bone(11,4)
+const_bone(15,11)
 const_bone(17,15)
-len_var(17,15)
+const_bone(5,0)
+const_bone(12,5)
+const_bone(16,12)
+const_bone(18,16)
+
         
 def disp_joints(i):
     '''
@@ -145,7 +175,6 @@ def disp_joints(i):
 # Create animation
 fig = plt.figure()
 ax = p3.Axes3D(fig)
-#ax = fig.add_subplot(111, projection='3d')
 graph = ax.scatter(xlist[0], ylist[0], zlist[0], s=20, c='black')
 hips, = ax.plot([xlist[0][5],xlist[0][0],xlist[0][4]], [ylist[0][5],ylist[0][0],ylist[0][4]], [zlist[0][5],zlist[0][0],zlist[0][4]], 'r')
 spine, = ax.plot([xlist[0][0],xlist[0][6],xlist[0][7],xlist[0][8],xlist[0][1]], [ylist[0][0],ylist[0][6],ylist[0][7],ylist[0][8],ylist[0][1]], [zlist[0][0],zlist[0][6],zlist[0][7],zlist[0][8],zlist[0][1]], 'r')
@@ -163,28 +192,3 @@ ax.axis("off")
 ani = anim.FuncAnimation(fig, disp_joints, num_frames, interval=0, repeat=True, blit=False)
 
 plt.show()
-
-
-
-#print('Marker labels:')
-#for i in range(0, num_markers):
-#    print acq.GetPoint(i).GetLabel() 
-#    print acq.GetPoint(i).GetValues()
-#    x.append(acq.GetPoint(i).GetValue(0,0)) 
-#    y.append(acq.GetPoint(i).GetValue(0,1))
-#    z.append(acq.GetPoint(i).GetValue(0,2))
-    #print acq.GetPoint(i).GetValue(0,0) #GetValue(frame,coord)
-    #print acq.GetPoint(i).GetValue(0,1)
-    #print acq.GetPoint(i).GetValue(0,2)
-
-#print('\n\nAnalog channels:')
-#for i in range(0, acq.GetAnalogs().GetItemNumber()):
-#    print acq.GetAnalog(i).GetLabel()
-
-#plt.plot(x,y,z,'orange',marker='o',linestyle='None')
-#plt.show()
-    
-print acq.GetPointFrequency() #Sampling rate (fps)
-print acq.GetPointFrameNumber() #No of frames
-print acq.GetPoints().GetItemNumber() #No. of markers
-

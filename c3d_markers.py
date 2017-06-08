@@ -1,11 +1,15 @@
 import btk
-import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import animation as anim
 import mpl_toolkits.mplot3d.axes3d as p3
+'''
+A code that reads a C3D file and plots all of the markers each frame to produce
+an animation.
+Azeem Khan 23/05/2017
+'''
 
 reader = btk.btkAcquisitionFileReader()
-reader.SetFilename("Mocap Data/816_0190.c3d")
+reader.SetFilename("Mocap Data/816_0190.c3d") #Specify file here
 reader.Update()
 acq = reader.GetOutput()
 
